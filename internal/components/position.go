@@ -1,4 +1,4 @@
 package components
 
-type Position struct{ X, Y float64 }
+type Position Vector2
 

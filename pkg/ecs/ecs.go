@@ -1,286 +1,212 @@
 package ecs
 
 import (
-	"math/bits"
 	"reflect"
 	"sync"
-
-	"github.com/Salvadego/ECS/pkg/utils"
 )
 
-type (
-	Entity      uint32
-	ComponentID uint32
-	Component   any
-	System      interface{ Update(dt float64) }
-	BitSet      uint32
-	Filter      struct{ bits []BitSet }
+// ComponentID represents a unique identifier for a component type.
+type ComponentID uint64
 
-	World struct {
-		mu              sync.RWMutex
-		nextEntity      Entity
-		nextComponentID ComponentID
+// Components can be anything
+type Component any
 
-		entities    utils.Set[Entity]
-		entityMasks map[Entity]Filter
+// EntityID represents a unique identifier for an entity.
+type EntityID uint64
 
-		componentIDs     map[reflect.Type]ComponentID
-		componentStorage map[ComponentID]map[Entity]Component
+// BitSet represents a dynamic bitset for component composition.
+type BitSet []ComponentID
 
-		systems []System
+// Set sets the bit at the given index.
+func (b *BitSet) Set(index ComponentID) {
+	word, bit := index/64, (index % 64)
+	for len(*b) <= int(word) {
+		*b = append(*b, 0)
 	}
-)
+	(*b)[word] |= 1 << bit
+}
+
+// Has checks if the bit at the given index is set.
+func (b BitSet) Has(index ComponentID) bool {
+	word, bit := index/64, uint(index%64)
+	if int(word) >= len(b) {
+		return false
+	}
+	return (b[word] & (1 << bit)) != 0
+}
+
+// Equals checks if two BitSets are equal.
+func (b BitSet) Equals(other BitSet) bool {
+	maxLen := max(len(other), len(b))
+	for i := range maxLen {
+		var aWord, bWord ComponentID
+		if i < len(b) {
+			aWord = b[i]
+		}
+		if i < len(other) {
+			bWord = other[i]
+		}
+		if aWord != bWord {
+			return false
+		}
+	}
+	return true
+}
+
+// ComponentTypeRegistry manages the mapping between component types and their IDs.
+type ComponentTypeRegistry struct {
+	mu       sync.Mutex
+	typeToID map[reflect.Type]ComponentID
+	nextID   ComponentID
+}
+
+func NewComponentTypeRegistry() *ComponentTypeRegistry {
+	return &ComponentTypeRegistry{
+		typeToID: make(map[reflect.Type]ComponentID),
+	}
+}
+
+func (r *ComponentTypeRegistry) GetComponentID(t reflect.Type) ComponentID {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if id, exists := r.typeToID[t]; exists {
+		return id
+	}
+	id := r.nextID
+	r.typeToID[t] = id
+	r.nextID++
+	return id
+}
+
+// Archetype represents a group of entities with the same component composition.
+type Archetype struct {
+	signature  BitSet
+	entities   []EntityID
+	components map[ComponentID][]Component
+}
+
+// World represents the ECS world containing all entities and archetypes.
+type World struct {
+	mu              sync.Mutex
+	registry        *ComponentTypeRegistry
+	archetypes      []*Archetype
+	entityArchetype map[EntityID]*Archetype
+	entityIndex     map[EntityID]int
+	nextEntityID    EntityID
+}
 
 func NewWorld() *World {
 	return &World{
-		mu:               sync.RWMutex{},
-		entities:         make(utils.Set[Entity], 0),
-		entityMasks:      make(map[Entity]Filter, 0),
-		componentIDs:     make(map[reflect.Type]ComponentID, 0),
-		componentStorage: make(map[ComponentID]map[Entity]Component, 0),
-		systems:          make([]System, 0),
+		registry:        NewComponentTypeRegistry(),
+		entityArchetype: make(map[EntityID]*Archetype),
+		entityIndex:     make(map[EntityID]int),
 	}
 }
 
-func (w *World) getComponentID(componentType reflect.Type) ComponentID {
-	id, exists := w.componentIDs[componentType]
-	if !exists {
-		id = w.nextComponentID
-		w.nextComponentID++
-		w.componentIDs[componentType] = id
-		w.componentStorage[id] = make(map[Entity]Component)
+// CreateEntity creates a new entity with the given components.
+func (w *World) CreateEntity(components ...Component) EntityID {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	signature := BitSet{}
+	componentData := make(map[ComponentID]Component)
+	for _, comp := range components {
+		t := reflect.TypeOf(comp)
+		id := w.registry.GetComponentID(t)
+		signature.Set(id)
+		componentData[id] = comp
 	}
-	return id
-}
 
-func (w *World) NewEntity() Entity {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	id := w.nextEntity
-	w.nextEntity++
-	w.entities.Add(id)
-	w.entityMasks[id] = NewFilter()
-	return id
-}
-
-func (w *World) RemoveEntity(e Entity) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	w.entities.Remove(e)
-
-	mask := w.entityMasks[e]
-	delete(w.entityMasks, e)
-
-	for _, compID := range w.componentIDs {
-		if mask.Contains(Filter{bits: []BitSet{1 << compID}}) {
-			delete(w.componentStorage[compID], e)
+	var archetype *Archetype
+	for _, arch := range w.archetypes {
+		if arch.signature.Equals(signature) {
+			archetype = arch
+			break
 		}
 	}
+	if archetype == nil {
+		archetype = &Archetype{
+			signature:  signature,
+			components: make(map[ComponentID][]Component),
+		}
+		w.archetypes = append(w.archetypes, archetype)
+	}
+
+	entityID := w.nextEntityID
+	w.nextEntityID++
+
+	index := len(archetype.entities)
+	archetype.entities = append(archetype.entities, entityID)
+	for id, comp := range componentData {
+		archetype.components[id] = append(archetype.components[id], comp)
+	}
+
+	w.entityArchetype[entityID] = archetype
+	w.entityIndex[entityID] = index
+
+	return entityID
 }
 
-func (w *World) AddComponent(e Entity, component Component) {
+// GetComponent retrieves a pointer to the component of the given type for the specified entity.
+func GetComponent[T any](w *World, entity EntityID) *T {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if _, exists := w.entities[e]; !exists {
-		return
-	}
-
-	componentType := reflect.TypeOf(component)
-	componentID := w.getComponentID(componentType)
-
-	w.componentStorage[componentID][e] = component
-
-	mask := w.entityMasks[e]
-	mask.Add(componentID)
-	w.entityMasks[e] = mask
-}
-
-func UpdateComponent[T Component](w *World, e Entity, updater func(*T)) bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	var zero T
-	componentType := reflect.TypeOf(zero)
-	componentID, exists := w.componentIDs[componentType]
+	archetype, exists := w.entityArchetype[entity]
 	if !exists {
-		return false
+		return nil
 	}
 
-	component, exists := w.componentStorage[componentID][e]
-	if !exists {
-		return false
+	id := w.registry.GetComponentID(reflect.TypeOf((*T)(nil)).Elem())
+	index := w.entityIndex[entity]
+	comps, exists := archetype.components[id]
+	if !exists || index >= len(comps) {
+		return nil
 	}
 
-	typed := component.(T)
-	updater(&typed)
-	w.componentStorage[componentID][e] = typed
-	return true
+	comp, ok := comps[index].(T)
+	if !ok {
+		return nil
+	}
+	return &comp
 }
 
-func GetComponent[T Component](w *World, e Entity) (T, bool) {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-
-	var zero T
-
-	if _, exists := w.entities[e]; !exists {
-		return zero, false
-	}
-
-	componentType := reflect.TypeOf(zero)
-	componentID, exists := w.componentIDs[componentType]
-	if !exists {
-		return zero, false
-	}
-
-	component, exists := w.componentStorage[componentID][e]
-	if !exists {
-		return zero, false
-	}
-
-	return component.(T), true
-}
-
-func RemoveComponent[T Component](w *World, e Entity) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if _, exists := w.entities[e]; !exists {
-		return
-	}
-
-	var zero T
-	componentType := reflect.TypeOf(zero)
-	componentID, exists := w.componentIDs[componentType]
-	if !exists {
-		return
-	}
-
-	delete(w.componentStorage[componentID], e)
-
-	mask := w.entityMasks[e]
-	newMask := NewFilter()
-	for _, compID := range w.componentIDs {
-		if compID != componentID && mask.Contains(Filter{bits: []BitSet{1 << compID}}) {
-			newMask.Add(compID)
-		}
-	}
-	w.entityMasks[e] = newMask
-}
-
-func (w *World) CreateFilter(components ...Component) Filter {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-
-	filter := NewFilter()
-
-	for _, component := range components {
-		t1 := reflect.TypeOf(component)
-		if id, exists := w.componentIDs[t1]; exists {
-			filter.Add(id)
-		}
-	}
-
-	return filter
-}
-
-func (w *World) Query(filter Filter) []Entity {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-
-	results := make([]Entity, 0)
-
-	for entity, mask := range w.entityMasks {
-		if mask.Contains(filter) {
-			results = append(results, entity)
-		}
-	}
-
-	return results
-}
-
-func (w *World) QueryEach(filter Filter, fn func(Entity)) {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-
-	for entity, mask := range w.entityMasks {
-		if mask.Contains(filter) {
-			fn(entity)
-		}
-	}
-}
-
-func (w *World) AddSystems(systems ...System) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	for _, system := range systems {
-		w.systems = append(w.systems, system)
-	}
-}
-
-func (w *World) Update(dt float64) {
-	for _, system := range w.systems {
-		system.Update(dt)
-	}
+type Filter struct {
+	include []reflect.Type
+	exclude []reflect.Type
 }
 
 func NewFilter() Filter {
-	return Filter{
-		bits: make([]BitSet, 4),
-	}
+	return Filter{}
 }
 
-func (f *Filter) Add(id ComponentID) {
-	index, bit := id/32, id%32
-	if int(index) >= len(f.bits) {
-		newBits := make([]BitSet, index+1)
-		copy(newBits, f.bits)
-		f.bits = newBits
-	}
-	f.bits[index] |= 1 << bit
+func With[T any](f Filter) Filter {
+	t := reflect.TypeOf((*T)(nil)).Elem()
+	f.include = append(f.include, t)
+	return f
 }
 
-func (f *Filter) Contains(other Filter) bool {
-	for i := 0; i < len(f.bits) && i < len(other.bits); i++ {
-		if other.bits[i] & ^f.bits[i] != 0 {
-			return false
-		}
-	}
-	return true
+func Without[T any](f Filter) Filter {
+	t := reflect.TypeOf((*T)(nil)).Elem()
+	f.exclude = append(f.exclude, t)
+	return f
 }
 
-func (f *Filter) Matches(other Filter) bool {
-	maxLen := max(len(other.bits), len(f.bits))
-
-	for i := range maxLen {
-		var fbits, obits BitSet
-		if i < len(f.bits) {
-			fbits = f.bits[i]
-		}
-		if i < len(other.bits) {
-			obits = other.bits[i]
-		}
-		if fbits != obits {
-			return false
-		}
-	}
-	return true
+// helper to check presence by ComponentID
+func (arch *Archetype) hasID(id ComponentID) bool {
+	return arch.signature.Has(id)
 }
 
-func (f *Filter) Clear() {
-	for i := range f.bits {
-		f.bits[i] = 0
-	}
+// check reflect.Type presence via the registry
+func (arch *Archetype) hasType(reg *ComponentTypeRegistry, t reflect.Type) bool {
+	id := reg.GetComponentID(t)
+	return arch.hasID(id)
 }
 
-func (f *Filter) Count() int {
-	count := 0
-	for _, v := range f.bits {
-		count += bits.OnesCount32(uint32(v))
-	}
-	return count
+// grab the slice by reflect.Type
+func (arch *Archetype) dataByType(reg *ComponentTypeRegistry, t reflect.Type) []Component {
+	id := reg.GetComponentID(t)
+	return arch.components[id]
 }
+
+//go:generate go run gen_queries.go -template=queries.tmpl -out=queries_gen.go -max=5

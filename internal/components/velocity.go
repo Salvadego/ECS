@@ -1,3 +1,3 @@
 package components
 
-type Velocity struct{ DX, DY float64 }
+type Velocity Vector2
