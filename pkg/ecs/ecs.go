@@ -14,6 +14,11 @@ type Component any
 // EntityID represents a unique identifier for an entity.
 type EntityID uint64
 
+// Systems should implement a Update function with the delta time, and modify their components...
+type System interface {
+	Update(dt float64)
+}
+
 // BitSet represents a dynamic bitset for component composition.
 type BitSet []ComponentID
 
@@ -93,6 +98,7 @@ type World struct {
 	entityArchetype map[EntityID]*Archetype
 	entityIndex     map[EntityID]int
 	nextEntityID    EntityID
+	systems         []System
 }
 
 func NewWorld() *World {
@@ -100,6 +106,7 @@ func NewWorld() *World {
 		registry:        NewComponentTypeRegistry(),
 		entityArchetype: make(map[EntityID]*Archetype),
 		entityIndex:     make(map[EntityID]int),
+		systems:         make([]System, 0),
 	}
 }
 
@@ -147,6 +154,23 @@ func (w *World) CreateEntity(components ...Component) EntityID {
 	return entityID
 }
 
+func (w *World) AddSystems(systems ...System) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	for _, system := range systems {
+		w.systems = append(w.systems, system)
+	}
+}
+
+func (w *World) Update(dt float64) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, system := range w.systems {
+		system.Update(dt)
+	}
+}
+
 // GetComponent retrieves a pointer to the component of the given type for the specified entity.
 func GetComponent[T any](w *World, entity EntityID) *T {
 	w.mu.Lock()
@@ -190,23 +214,6 @@ func Without[T any](f Filter) Filter {
 	t := reflect.TypeOf((*T)(nil)).Elem()
 	f.exclude = append(f.exclude, t)
 	return f
-}
-
-// helper to check presence by ComponentID
-func (arch *Archetype) hasID(id ComponentID) bool {
-	return arch.signature.Has(id)
-}
-
-// check reflect.Type presence via the registry
-func (arch *Archetype) hasType(reg *ComponentTypeRegistry, t reflect.Type) bool {
-	id := reg.GetComponentID(t)
-	return arch.hasID(id)
-}
-
-// grab the slice by reflect.Type
-func (arch *Archetype) dataByType(reg *ComponentTypeRegistry, t reflect.Type) []Component {
-	id := reg.GetComponentID(t)
-	return arch.components[id]
 }
 
 //go:generate go run gen_queries.go -template=queries.tmpl -out=queries_gen.go -max=5

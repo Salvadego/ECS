@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
 
 	"github.com/Salvadego/ECS/internal/components"
+	"github.com/Salvadego/ECS/internal/systems"
 	"github.com/Salvadego/ECS/pkg/ecs"
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
@@ -20,60 +22,45 @@ func main() {
 	rl.SetTargetFPS(120)
 
 	world := ecs.NewWorld()
+	movementSystem := systems.NewMovementSystem(world, screenWidth, screenHeight)
+	renderSystem := systems.NewRenderSystem(world, screenWidth, screenHeight)
+	world.AddSystems(movementSystem, renderSystem)
 
 	for range entityCount {
 		world.CreateEntity(
-			&components.Position{X: float64(rand.Intn(screenWidth)), Y: float64(rand.Intn(screenHeight))},
-			&components.Velocity{X: 0, Y: 0},
+			&components.Position{
+				X: float64(rand.Intn(screenWidth)),
+				Y: float64(rand.Intn(screenHeight)),
+			},
+			&components.Velocity{
+				X: (rand.Float64()*10 - 1) * 10,
+				Y: (rand.Float64()*10 - 1) * 10,
+			},
 			components.Renderable{
-				Width:  1,
-				Height: 1,
 				Color: rl.Color{
-					R: 255,
+					R: 100,
 					G: 255,
-					B: 255,
+					B: 100,
 					A: uint8(rand.Intn(100)),
 				},
 			},
 		)
 	}
 
-	velPosFilter := ecs.With[components.Position](ecs.With[components.Velocity](ecs.NewFilter()))
-	posRendFilter := ecs.With[components.Renderable](ecs.With[components.Position](ecs.NewFilter()))
-
+	lastWidth, lastHeight := screenWidth, screenHeight
 	for !rl.WindowShouldClose() {
-		for _, t := range ecs.Query2[*components.Velocity, *components.Position](velPosFilter, world) {
-			vel := t.C1
-			pos := t.C2
-
-			vel.X = (rand.Float64()*2 - 1) * 2
-			vel.Y = (rand.Float64()*2 - 1) * 2
-
-			pos.X += vel.X
-			pos.Y += vel.Y
-			if pos.X < 0 || pos.X > screenWidth {
-				vel.X *= -1
-			}
-
-			if pos.Y < 0 || pos.Y > screenHeight {
-				vel.Y *= -1
-			}
+		currWidth, currHeight := rl.GetScreenWidth(), rl.GetScreenHeight()
+		if currWidth != lastWidth || currHeight != lastHeight {
+			movementSystem.SetSize(currWidth, currHeight)
+			renderSystem.SetSize(currWidth, currHeight)
 		}
+		lastWidth, lastHeight = currWidth, currHeight
 
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.Black)
-
+		world.Update(float64(rl.GetFrameTime()))
 		rl.DrawFPS(10, 10)
-		for _, t := range ecs.Query2[*components.Position, components.Renderable](posRendFilter, world) {
-			pos := t.C1
-			rend := t.C2
-			rl.DrawRectangle(
-				int32(pos.X), int32(pos.Y),
-				int32(rend.Width), int32(rend.Height),
-				rend.Color,
-			)
-		}
-
+		rl.DrawText(fmt.Sprintf("Entity Count %d", entityCount), 10, 30, 30, rl.White)
 		rl.EndDrawing()
 	}
 
