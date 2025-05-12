@@ -10,8 +10,6 @@ type MovementSystem struct {
 	screenWidth, screenHeight int
 }
 
-var velPosFilter = ecs.With[components.Position](ecs.With[components.Velocity](ecs.NewFilter()))
-
 func NewMovementSystem(world *ecs.World, width, height int) *MovementSystem {
 	return &MovementSystem{
 		World:        world,
@@ -20,7 +18,7 @@ func NewMovementSystem(world *ecs.World, width, height int) *MovementSystem {
 	}
 }
 
-func (ms *MovementSystem) SetSize(width, height int){
+func (ms *MovementSystem) SetSize(width, height int) {
 	ms.screenWidth, ms.screenHeight = width, height
 }
 
@@ -31,11 +29,11 @@ func (ms *MovementSystem) Update(dt float64) {
 
 		pos.X += vel.X * dt
 		pos.Y += vel.Y * dt
-		if pos.X < 0 || pos.X > float64(ms.screenWidth) {
+		if pos.X <= 0 || int(pos.X) >= (ms.screenWidth) {
 			vel.X *= -1
 		}
 
-		if pos.Y < 0 || pos.Y > float64(ms.screenHeight) {
+		if pos.Y <= 0 || int(pos.Y) >= (ms.screenHeight) {
 			vel.Y *= -1
 		}
 	}

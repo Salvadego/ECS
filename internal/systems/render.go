@@ -8,8 +8,6 @@ import (
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
 
-var posRendFilter = ecs.With[components.Renderable](ecs.With[components.Position](ecs.NewFilter()))
-
 type RenderSystem struct {
 	world                     *ecs.World
 	screenWidth, screenHeight int

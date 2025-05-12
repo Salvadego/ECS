@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"math/rand"
 
 	"github.com/Salvadego/ECS/internal/components"
@@ -11,9 +10,14 @@ import (
 )
 
 const (
-	entityCount  = 100_000
+	entityCount  = 50_000
 	screenWidth  = 800
 	screenHeight = 600
+)
+
+var (
+	currWidth, currHeight = screenWidth, screenHeight
+	lastWidth, lastHeight = screenWidth, screenHeight
 )
 
 func main() {
@@ -24,7 +28,8 @@ func main() {
 	world := ecs.NewWorld()
 	movementSystem := systems.NewMovementSystem(world, screenWidth, screenHeight)
 	renderSystem := systems.NewRenderSystem(world, screenWidth, screenHeight)
-	world.AddSystems(movementSystem, renderSystem)
+	inputSystem := systems.NewInputSystem(world)
+	world.AddSystems(movementSystem, renderSystem, inputSystem)
 
 	for range entityCount {
 		world.CreateEntity(
@@ -47,9 +52,8 @@ func main() {
 		)
 	}
 
-	lastWidth, lastHeight := screenWidth, screenHeight
 	for !rl.WindowShouldClose() {
-		currWidth, currHeight := rl.GetScreenWidth(), rl.GetScreenHeight()
+		currWidth, currHeight = rl.GetScreenWidth(), rl.GetScreenHeight()
 		if currWidth != lastWidth || currHeight != lastHeight {
 			movementSystem.SetSize(currWidth, currHeight)
 			renderSystem.SetSize(currWidth, currHeight)
@@ -60,7 +64,6 @@ func main() {
 		rl.ClearBackground(rl.Black)
 		world.Update(float64(rl.GetFrameTime()))
 		rl.DrawFPS(10, 10)
-		rl.DrawText(fmt.Sprintf("Entity Count %d", entityCount), 10, 30, 30, rl.White)
 		rl.EndDrawing()
 	}
 
