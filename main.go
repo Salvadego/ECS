@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	entityCount  = 200_000
+	entityCount  = 100_000
 	screenWidth  = 800
 	screenHeight = 600
 )
@@ -26,8 +26,8 @@ func main() {
 			&components.Position{X: float64(rand.Intn(screenWidth)), Y: float64(rand.Intn(screenHeight))},
 			&components.Velocity{X: 0, Y: 0},
 			components.Renderable{
-				Width:  2,
-				Height: 2,
+				Width:  1,
+				Height: 1,
 				Color: rl.Color{
 					R: 255,
 					G: 255,
@@ -51,15 +51,12 @@ func main() {
 
 			pos.X += vel.X
 			pos.Y += vel.Y
-			if pos.X < 0 {
-				pos.X += screenWidth
-			} else if pos.X > screenWidth {
-				pos.X -= screenWidth
+			if pos.X < 0 || pos.X > screenWidth {
+				vel.X *= -1
 			}
-			if pos.Y < 0 {
-				pos.Y += screenHeight
-			} else if pos.Y > screenHeight {
-				pos.Y -= screenHeight
+
+			if pos.Y < 0 || pos.Y > screenHeight {
+				vel.Y *= -1
 			}
 		}
 
