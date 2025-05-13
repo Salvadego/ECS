@@ -98,6 +98,11 @@ func (b BitSet) Indices() []ComponentID {
 	return ids
 }
 
+type EntityData struct {
+	archetype *Archetype
+	index     int
+}
+
 // Archetype represents a group of entities with the same component composition.
 type Archetype struct {
 	signature  BitSet
@@ -111,8 +116,7 @@ type World struct {
 	archetypes            []*Archetype
 	archetypeMap          map[uint64]*Archetype        // Fast archetype lookup by signature hash
 	archetypesByComponent map[ComponentID][]*Archetype // Index archetypes by component for faster queries
-	entityArchetype       map[EntityID]*Archetype
-	entityIndex           map[EntityID]int
+	entityData            map[EntityID]EntityData      // Combined entity data (replaces two maps)
 	nextEntityID          EntityID
 	systems               []System
 }
@@ -120,8 +124,7 @@ type World struct {
 // NewWorld creates a new World instance.
 func NewWorld() *World {
 	return &World{
-		entityArchetype:       make(map[EntityID]*Archetype),
-		entityIndex:           make(map[EntityID]int),
+		entityData:            make(map[EntityID]EntityData),
 		archetypeMap:          make(map[uint64]*Archetype),
 		archetypesByComponent: make(map[ComponentID][]*Archetype),
 		systems:               make([]System, 0),
@@ -179,8 +182,10 @@ func (w *World) CreateEntity(components ...Component) EntityID {
 		archetype.components[id] = append(archetype.components[id], comp)
 	}
 
-	w.entityArchetype[entityID] = archetype
-	w.entityIndex[entityID] = index
+	w.entityData[entityID] = EntityData{
+		archetype: archetype,
+		index:     index,
+	}
 
 	return entityID
 }
@@ -209,8 +214,7 @@ func (w *World) Update(dt float64) {
 // GetComponent retrieves a component for an entity
 func GetComponent[T Component](w *World, entity EntityID) T {
 	w.mu.RLock()
-	arch, exists := w.entityArchetype[entity]
-	idx := w.entityIndex[entity]
+	data, exists := w.entityData[entity]
 	w.mu.RUnlock()
 
 	var zero T
@@ -219,7 +223,8 @@ func GetComponent[T Component](w *World, entity EntityID) T {
 	}
 
 	id := zero.ID()
-	comps := arch.components[id]
+	comps := data.archetype.components[id]
+	idx := data.index
 	if idx < 0 || idx >= len(comps) {
 		return zero
 	}
