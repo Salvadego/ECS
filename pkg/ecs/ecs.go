@@ -12,11 +12,6 @@ type Component interface {
 	ID() ComponentID
 }
 
-type ComponentSlot struct {
-	id   ComponentID
-	data []Component
-}
-
 // EntityID represents a unique identifier for an entity.
 type EntityID uint64
 
@@ -92,7 +87,7 @@ func (b BitSet) Indices() []ComponentID {
 	var ids []ComponentID
 	for wordIdx, word := range b {
 		if word == 0 {
-			continue // Skip words with no bits set for efficiency
+			continue
 		}
 		for bit := range 64 {
 			if (word & (1 << uint(bit))) != 0 {
@@ -103,6 +98,7 @@ func (b BitSet) Indices() []ComponentID {
 	return ids
 }
 
+// EntityData stores entity information
 type EntityData struct {
 	archetype *Archetype
 	index     int
@@ -110,15 +106,22 @@ type EntityData struct {
 
 // Archetype represents a group of entities with the same component composition.
 type Archetype struct {
-	signature BitSet
-	entities  []EntityID
-	slots     []ComponentSlot
-	slotIndex map[ComponentID]int
+	signature  BitSet
+	entities   []EntityID
+	components []ComponentSlot
+	compIndex  map[ComponentID]int
 }
 
-func (a *Archetype) GetSlot(id ComponentID) ([]Component, bool) {
-	if idx, ok := a.slotIndex[id]; ok && idx < len(a.slots) {
-		return a.slots[idx].data, true
+// ComponentSlot stores components of a single type
+type ComponentSlot struct {
+	id   ComponentID
+	data []Component
+}
+
+// GetComponentData provides direct access to a component array
+func (a *Archetype) GetComponentData(id ComponentID) ([]Component, bool) {
+	if idx, ok := a.compIndex[id]; ok && idx < len(a.components) {
+		return a.components[idx].data, true
 	}
 	return nil, false
 }
@@ -127,9 +130,9 @@ func (a *Archetype) GetSlot(id ComponentID) ([]Component, bool) {
 type World struct {
 	mu                    sync.RWMutex
 	archetypes            []*Archetype
-	archetypeMap          map[uint64]*Archetype        // Fast archetype lookup by signature hash
-	archetypesByComponent map[ComponentID][]*Archetype // Index archetypes by component for faster queries
-	entityData            map[EntityID]EntityData      // Combined entity data (replaces two maps)
+	archetypeMap          map[uint64]*Archetype
+	archetypesByComponent map[ComponentID][]*Archetype
+	entityData            map[EntityID]EntityData
 	nextEntityID          EntityID
 	systems               []System
 }
@@ -151,7 +154,7 @@ func (w *World) registerArchetype(archetype *Archetype) {
 	w.archetypeMap[hash] = archetype
 
 	// Index by component for faster queries
-	for _, id := range archetype.signature.Indices() {
+	for id := range archetype.compIndex {
 		w.archetypesByComponent[id] = append(w.archetypesByComponent[id], archetype)
 	}
 }
@@ -177,13 +180,13 @@ func (w *World) CreateEntity(components ...Component) EntityID {
 	}
 
 	if !exists {
-		slots := make([]ComponentSlot, 0, len(componentMap))
-		slotIndex := make(map[ComponentID]int, len(componentMap))
+		compArray := make([]ComponentSlot, 0, len(componentMap))
+		compIndex := make(map[ComponentID]int, len(componentMap))
 
 		i := 0
 		for id := range componentMap {
-			slotIndex[id] = i
-			slots = append(slots, ComponentSlot{
+			compIndex[id] = i
+			compArray = append(compArray, ComponentSlot{
 				id:   id,
 				data: make([]Component, 0, 64),
 			})
@@ -191,9 +194,9 @@ func (w *World) CreateEntity(components ...Component) EntityID {
 		}
 
 		archetype = &Archetype{
-			signature: signature,
-			slots:     slots,
-			slotIndex: slotIndex,
+			signature:  signature,
+			components: compArray,
+			compIndex:  compIndex,
 		}
 		w.registerArchetype(archetype)
 	}
@@ -204,10 +207,9 @@ func (w *World) CreateEntity(components ...Component) EntityID {
 	index := len(archetype.entities)
 	archetype.entities = append(archetype.entities, entityID)
 
-	// Add components to their respective slots
 	for id, comp := range componentMap {
-		if slotIdx, ok := archetype.slotIndex[id]; ok && slotIdx < len(archetype.slots) {
-			archetype.slots[slotIdx].data = append(archetype.slots[slotIdx].data, comp)
+		if idx, ok := archetype.compIndex[id]; ok {
+			archetype.components[idx].data = append(archetype.components[idx].data, comp)
 		}
 	}
 
@@ -230,11 +232,10 @@ func (w *World) AddSystems(systems ...System) {
 
 // Update now allows systems to run in parallel if they're marked as safe for parallel execution
 func (w *World) Update(dt float64) {
-	w.mu.RLock()         // Use read lock to allow concurrent access for systems
-	systems := w.systems // Copy to avoid mutex during iteration
+	w.mu.RLock()
+	systems := w.systems
 	w.mu.RUnlock()
 
-	// Sequential update for now - could be extended to parallel if systems implement a marker interface
 	for _, system := range systems {
 		system.Update(dt)
 	}
@@ -252,7 +253,7 @@ func GetComponent[T Component](w *World, entity EntityID) T {
 	}
 
 	id := zero.ID()
-	components, ok := data.archetype.GetSlot(id)
+	components, ok := data.archetype.GetComponentData(id)
 	if !ok || data.index >= len(components) {
 		return zero
 	}
@@ -280,7 +281,6 @@ func (f *Filter) Without(ids ...ComponentID) *Filter {
 	return f
 }
 
-// Query optimized to use the component indices
 func (f Filter) Query(w *World) [][]Component {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -290,7 +290,6 @@ func (f Filter) Query(w *World) [][]Component {
 		return nil
 	}
 
-	// Find archetypes with fewest entities first
 	var candidateArchetypes []*Archetype
 	minCount := -1
 
@@ -307,8 +306,8 @@ func (f Filter) Query(w *World) [][]Component {
 		}
 	}
 
-	totalEntities := 0
 	matchingArchetypes := make([]*Archetype, 0, len(candidateArchetypes))
+	totalEntities := 0
 
 	for _, arch := range candidateArchetypes {
 		if f.includeMatch(arch.signature) && !f.excludeMatch(arch.signature) {
@@ -319,30 +318,39 @@ func (f Filter) Query(w *World) [][]Component {
 
 	result := make([][]Component, 0, totalEntities)
 
-	rowBuffer := make([]Component, len(includeIDs))
-
 	for _, arch := range matchingArchetypes {
-		slots := make([][]Component, len(includeIDs))
+		componentArrays := make([][]Component, len(includeIDs))
+		allComponentsPresent := true
+
 		for i, id := range includeIDs {
-			comps, ok := arch.GetSlot(id)
-			if ok {
-				slots[i] = comps
+			if comps, ok := arch.GetComponentData(id); ok {
+				componentArrays[i] = comps
+			} else {
+				allComponentsPresent = false
+				break
 			}
 		}
 
-		for entityIdx := range arch.entities {
+		if !allComponentsPresent {
+			continue
+		}
+
+		entityCount := len(arch.entities)
+
+		for entityIdx := range entityCount {
+			row := make([]Component, len(includeIDs))
 			valid := true
-			for i, comps := range slots {
-				if comps == nil || entityIdx >= len(comps) {
+
+			for i, comps := range componentArrays {
+				if entityIdx < len(comps) {
+					row[i] = comps[entityIdx]
+				} else {
 					valid = false
 					break
 				}
-				rowBuffer[i] = comps[entityIdx]
 			}
 
 			if valid {
-				row := make([]Component, len(includeIDs))
-				copy(row, rowBuffer)
 				result = append(result, row)
 			}
 		}
