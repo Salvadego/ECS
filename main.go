@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"math/rand"
 
@@ -11,7 +12,6 @@ import (
 )
 
 const (
-	entityCount  = 1_100_000
 	screenWidth  = 600
 	screenHeight = 450
 )
@@ -22,7 +22,9 @@ var (
 )
 
 func main() {
-	rl.SetConfigFlags(rl.FlagWindowResizable)
+	entityCount := flag.Int64("n", 10000, "Entity count")
+	flag.Parse()
+
 	rl.InitWindow(screenWidth, screenHeight, "ECS")
 	rl.SetTargetFPS(120)
 
@@ -32,7 +34,7 @@ func main() {
 	inputSystem := systems.NewInputSystem(world)
 	world.AddSystems(movementSystem, renderSystem, inputSystem)
 
-	for range entityCount {
+	for range *entityCount {
 		world.CreateEntity(
 			&components.Position{
 				X: float64(rand.Intn(screenWidth)),
@@ -67,7 +69,7 @@ func main() {
 		world.Update(float64(rl.GetFrameTime()))
 
 		rl.DrawFPS(10, 10)
-		rl.DrawText(fmt.Sprintf("Entity count: %d", entityCount), 10, 30, 20, rl.White)
+		rl.DrawText(fmt.Sprintf("Entity count: %d", *entityCount), 10, 30, 20, rl.White)
 
 		rl.EndDrawing()
 	}
