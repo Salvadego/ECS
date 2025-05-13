@@ -36,8 +36,8 @@ func (ms *MovementSystem) Update(dt float64) {
 		}
 
 		if pos.Y <= 0 {
-			pos.Y = float64(ms.screenWidth)
-		} else if pos.Y >= float64(ms.screenWidth) {
+			pos.Y = float64(ms.screenHeight)
+		} else if pos.Y >= float64(ms.screenHeight) {
 			pos.Y = 0
 		}
 	}

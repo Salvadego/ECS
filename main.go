@@ -49,7 +49,7 @@ func main() {
 					R: 100,
 					G: 255,
 					B: 100,
-					A: uint8(rand.Intn(100)),
+					A: uint8(rand.Intn(100) + 100),
 				},
 			},
 		)
