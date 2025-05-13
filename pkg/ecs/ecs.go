@@ -21,7 +21,7 @@ type System interface {
 }
 
 // BitSet represents a dynamic bitset for component composition.
-type BitSet [8]ComponentID
+type BitSet [2]ComponentID
 
 // Set sets the bit at the given index.
 func (b *BitSet) Set(index ComponentID) {

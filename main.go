@@ -10,9 +10,9 @@ import (
 )
 
 const (
-	entityCount  = 200_000
-	screenWidth  = 800
-	screenHeight = 600
+	entityCount  = 100_000
+	screenWidth  = 600
+	screenHeight = 450
 )
 
 var (
@@ -21,7 +21,6 @@ var (
 )
 
 func main() {
-	rl.SetConfigFlags(rl.FlagWindowResizable | rl.FlagWindowMaximized)
 	rl.InitWindow(screenWidth, screenHeight, "ECS")
 	rl.SetTargetFPS(120)
 
