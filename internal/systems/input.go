@@ -9,21 +9,21 @@ import (
 )
 
 type InputSystem struct {
-	World *ecs.World
+	world *ecs.World
 }
 
 func NewInputSystem(world *ecs.World) *InputSystem {
 	return &InputSystem{
-		World: world,
+		world: world,
 	}
 }
 
-func (ms *InputSystem) Update(dt float64) {
+func (is *InputSystem) Update(dt float64) {
 	if !rl.IsMouseButtonDown(rl.MouseButtonLeft) {
 		return
 	}
 
-	for _, t := range velPosFilter.Query(ms.World){
+	for _, t := range velPosFilter.Query(is.world) {
 		pos := t[0].(*components.Position)
 		vel := t[1].(*components.Velocity)
 

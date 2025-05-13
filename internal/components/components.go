@@ -11,6 +11,7 @@ const (
 
 func init() {
 	ecs.RegisterComponentType[*Position](PositionID)
+	ecs.RegisterComponentType[*Renderable](RenderableID)
+	ecs.RegisterComponentType[*Vector2](Vector2ID)
 	ecs.RegisterComponentType[*Velocity](VelocityID)
-	ecs.RegisterComponentType[Renderable](RenderableID)
 }

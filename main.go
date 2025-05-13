@@ -25,6 +25,7 @@ func main() {
 	entityCount := flag.Int64("n", 10000, "Entity count")
 	flag.Parse()
 
+	rl.SetConfigFlags(rl.FlagWindowResizable)
 	rl.InitWindow(screenWidth, screenHeight, "ECS")
 	rl.SetTargetFPS(120)
 
@@ -45,6 +46,8 @@ func main() {
 				Y: (rand.Float64()*10 - 1) * 10,
 			},
 			components.Renderable{
+				// Width: 20,
+				// Height: 20,
 				Color: rl.Color{
 					R: 100,
 					G: 255,
