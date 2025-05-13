@@ -153,7 +153,6 @@ func (w *World) registerArchetype(archetype *Archetype) {
 	hash := archetype.signature.Hash()
 	w.archetypeMap[hash] = archetype
 
-	// Index by component for faster queries
 	for id := range archetype.compIndex {
 		w.archetypesByComponent[id] = append(w.archetypesByComponent[id], archetype)
 	}
