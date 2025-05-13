@@ -63,14 +63,22 @@ func main() {
 	buf.WriteString("package components\n\n")
 	buf.WriteString("import \"" + ecsImport + "\"\n\n")
 	buf.WriteString("const (\n")
-	for _, name := range names {
-		buf.WriteString(fmt.Sprintf("\t%sID ecs.ComponentID = iota\n", name))
+	buf.WriteString(fmt.Sprintf("\t%sID ecs.ComponentID = 1 << iota\n", names[0]))
+	for _, name := range names[1:] {
+		buf.WriteString(fmt.Sprintf("\t%sID\n", name))
 	}
 	buf.WriteString(")\n")
+	buf.WriteString("\n")
+
+	buf.WriteString("func init() {\n")
+	for _, name := range names {
+		buf.WriteString(fmt.Sprintf("\tecs.RegisterComponentType[*%s](%sID)\n", name, name))
+	}
+	buf.WriteString("}\n")
+
 	os.WriteFile(filepath.Join(compDir, "components.go"), buf.Bytes(), 0644)
 }
 
-// findModulePath reads go.mod in cwd or parent to find module declaration
 func findModulePath() string {
 	cwd, err := os.Getwd()
 	if err != nil {

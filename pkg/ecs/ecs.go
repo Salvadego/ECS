@@ -22,18 +22,25 @@ type System interface {
 }
 
 // BitSet represents a dynamic bitset for component composition.
-type BitSet [2]ComponentID
+type BitSet []ComponentID
 
 // Set sets the bit at the given index.
 func (b *BitSet) Set(index ComponentID) {
-	word, bit := index/64, (index % 64)
+	word, bit := int(index/64), uint(index%64)
+
+	if word >= len(*b) {
+		newB := make(BitSet, word+1)
+		copy(newB, *b)
+		*b = newB
+	}
+
 	(*b)[word] |= 1 << bit
 }
 
 // Has checks if the bit at the given index is set.
 func (b BitSet) Has(index ComponentID) bool {
-	word, bit := index/64, uint(index%64)
-	if int(word) >= len(b) {
+	word, bit := int(index/64), uint(index%64)
+	if word >= len(b) {
 		return false
 	}
 	return (b[word] & (1 << bit)) != 0
@@ -41,46 +48,73 @@ func (b BitSet) Has(index ComponentID) bool {
 
 // Equals checks if two BitSets are equal.
 func (b BitSet) Equals(other BitSet) bool {
-	// Fast path - direct comparison
-	return b[0] == other[0] && b[1] == other[1]
-}
+	maxLen := max(len(other), len(b))
 
-func (b BitSet) ContainsAll(other BitSet) bool {
-	return (b[0]&other[0]) == other[0] && (b[1]&other[1]) == other[1]
-}
-
-func (b BitSet) Intersects(other BitSet) bool {
-	return (b[0]&other[0] != 0) || (b[1]&other[1] != 0)
-}
-
-// Hash generates a hash value for the BitSet for map lookup
-func (b BitSet) Hash() uint64 {
-	return uint64(b[0]) ^ (uint64(b[1]) << 32)
-}
-
-func (b BitSet) Indices() []ComponentID {
-	// Pre-count bits to allocate exact size
-	count := 0
-	for _, word := range b {
-		x := word
-		for x != 0 {
-			count++
-			x &= x - 1
+	for i := range maxLen {
+		var bw, ow ComponentID
+		if i < len(b) {
+			bw = b[i]
+		}
+		if i < len(other) {
+			ow = other[i]
+		}
+		if bw != ow {
+			return false
 		}
 	}
+	return true
+}
 
-	ids := make([]ComponentID, 0, count)
+// ContainsAll checks if all bits set in other are also set in b.
+func (b BitSet) ContainsAll(other BitSet) bool {
+	for i := range other {
+		if i >= len(b) {
+			if other[i] != 0 {
+				return false
+			}
+			continue
+		}
+		if (b[i] & other[i]) != other[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// Intersects returns true if there's at least one common bit set.
+func (b BitSet) Intersects(other BitSet) bool {
+	maxLen := max(len(other), len(b))
+	for i := range maxLen {
+		if i < len(b) && i < len(other) && (b[i]&other[i]) != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// Hash generates a hash value for the BitSet.
+func (b BitSet) Hash() ComponentID {
+	var hash ComponentID
+	for i, word := range b {
+		hash ^= word << (i % 8)
+	}
+	return hash
+}
+
+// Indices returns all indices where bits are set.
+func (b BitSet) Indices() []ComponentID {
+	indices := []ComponentID{}
 	for wordIdx, word := range b {
 		if word == 0 {
 			continue
 		}
 		for bit := uint(0); bit < 64; bit++ {
 			if (word & (1 << bit)) != 0 {
-				ids = append(ids, ComponentID(wordIdx*64+int(bit)))
+				indices = append(indices, ComponentID(wordIdx*64+int(bit)))
 			}
 		}
 	}
-	return ids
+	return indices
 }
 
 // ComponentTypeInfo stores type information for a component type
@@ -162,7 +196,7 @@ func (a *Archetype) AddEntity(entityID EntityID, componentMap map[ComponentID]Co
 // Query cache to avoid recreating similar queries
 type queryCache struct {
 	mu     sync.RWMutex
-	cache  map[uint64][][]Component
+	cache  map[ComponentID][][]Component
 	filter Filter
 }
 
@@ -170,22 +204,22 @@ type queryCache struct {
 type World struct {
 	mu                    sync.RWMutex
 	archetypes            []*Archetype
-	archetypeMap          map[uint64]*Archetype
+	archetypeMap          map[ComponentID]*Archetype
 	archetypesByComponent map[ComponentID][]*Archetype
 	entityData            map[EntityID]EntityData
 	nextEntityID          EntityID
 	systems               []System
-	queryCache            map[uint64]*queryCache
+	queryCache            map[ComponentID]*queryCache
 }
 
 // NewWorld creates a new World instance.
 func NewWorld() *World {
 	return &World{
 		entityData:            make(map[EntityID]EntityData, 1024),
-		archetypeMap:          make(map[uint64]*Archetype, 64),
+		archetypeMap:          make(map[ComponentID]*Archetype, 64),
 		archetypesByComponent: make(map[ComponentID][]*Archetype, 32),
 		systems:               make([]System, 0, 16),
-		queryCache:            make(map[uint64]*queryCache),
+		queryCache:            make(map[ComponentID]*queryCache),
 	}
 }
 
@@ -494,7 +528,7 @@ func (f Filter) Query(w *World) [][]Component {
 	w.mu.Lock()
 	if _, ok := w.queryCache[cacheKey]; !ok {
 		w.queryCache[cacheKey] = &queryCache{
-			cache:  make(map[uint64][][]Component),
+			cache:  make(map[ComponentID][][]Component),
 			filter: f,
 		}
 	}
@@ -519,5 +553,5 @@ func (f Filter) excludeMatch(sig BitSet) bool {
 func (w *World) ClearQueryCache() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.queryCache = make(map[uint64]*queryCache)
+	w.queryCache = make(map[ComponentID]*queryCache)
 }
