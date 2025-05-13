@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
 
 	"github.com/Salvadego/ECS/internal/components"
@@ -10,7 +11,7 @@ import (
 )
 
 const (
-	entityCount  = 100_000
+	entityCount  = 1_100_000
 	screenWidth  = 600
 	screenHeight = 450
 )
@@ -21,6 +22,7 @@ var (
 )
 
 func main() {
+	rl.SetConfigFlags(rl.FlagWindowResizable)
 	rl.InitWindow(screenWidth, screenHeight, "ECS")
 	rl.SetTargetFPS(120)
 
@@ -61,8 +63,12 @@ func main() {
 
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.Black)
+
 		world.Update(float64(rl.GetFrameTime()))
+
 		rl.DrawFPS(10, 10)
+		rl.DrawText(fmt.Sprintf("Entity count: %d", entityCount), 10, 30, 20, rl.White)
+
 		rl.EndDrawing()
 	}
 

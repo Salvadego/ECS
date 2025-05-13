@@ -29,12 +29,16 @@ func (ms *MovementSystem) Update(dt float64) {
 
 		pos.X += vel.X * dt
 		pos.Y += vel.Y * dt
-		if pos.X <= 0 || int(pos.X) >= (ms.screenWidth) {
-			vel.X *= -1
+		if pos.X <= 0 {
+			pos.X = float64(ms.screenWidth)
+		} else if pos.X >= float64(ms.screenWidth) {
+			pos.X = 0
 		}
 
-		if pos.Y <= 0 || int(pos.Y) >= (ms.screenHeight) {
-			vel.Y *= -1
+		if pos.Y <= 0 {
+			pos.Y = float64(ms.screenWidth)
+		} else if pos.Y >= float64(ms.screenWidth) {
+			pos.Y = 0
 		}
 	}
 }
