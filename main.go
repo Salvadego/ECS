@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"math/rand"
 
 	"github.com/Salvadego/ECS/internal/components"
@@ -11,7 +10,7 @@ import (
 )
 
 const (
-	entityCount  = 50_000
+	entityCount  = 200_000
 	screenWidth  = 800
 	screenHeight = 600
 )
@@ -22,7 +21,7 @@ var (
 )
 
 func main() {
-	rl.SetConfigFlags(rl.FlagWindowResizable)
+	rl.SetConfigFlags(rl.FlagWindowResizable | rl.FlagWindowMaximized)
 	rl.InitWindow(screenWidth, screenHeight, "ECS")
 	rl.SetTargetFPS(120)
 
@@ -53,9 +52,6 @@ func main() {
 		)
 	}
 
-	var fps int32 = 120
-	var lastFps int32 = fps
-
 	for !rl.WindowShouldClose() {
 		currWidth, currHeight = rl.GetScreenWidth(), rl.GetScreenHeight()
 		if currWidth != lastWidth || currHeight != lastHeight {
@@ -63,13 +59,6 @@ func main() {
 			renderSystem.SetSize(currWidth, currHeight)
 		}
 		lastWidth, lastHeight = currWidth, currHeight
-
-		fps = rl.GetFPS()
-		if lastFps != fps {
-			fmt.Print("\033[H\033[2J")
-			fmt.Println(fps)
-		}
-		lastFps = fps
 
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.Black)

@@ -43,9 +43,9 @@ func (rs *RenderSystem) Update(_ float64) {
 		rs.framebuffer[i] = color.RGBA{0, 0, 0, 255}
 	}
 
-	for _, t := range ecs.Query2[*components.Position, components.Renderable](posRendFilter, rs.world) {
-		pos := t.C1
-		rend := t.C2
+	for _, t := range posRendFilter.Query(rs.world) {
+		pos := t[0].(*components.Position)
+		rend := t[1].(components.Renderable)
 
 		px := int(pos.X)
 		py := int(pos.Y)

@@ -23,9 +23,9 @@ func (ms *InputSystem) Update(dt float64) {
 		return
 	}
 
-	for _, t := range ecs.Query2[*components.Velocity, *components.Position](velPosFilter, ms.World) {
-		vel := t.C1
-		pos := t.C2
+	for _, t := range velPosFilter.Query(ms.World){
+		pos := t[0].(*components.Position)
+		vel := t[1].(*components.Velocity)
 
 		mouseVector := components.Vector2{
 			X: float64(rl.GetMouseX()),

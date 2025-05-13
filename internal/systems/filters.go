@@ -6,6 +6,6 @@ import (
 )
 
 var (
-	velPosFilter  = ecs.With[components.Position](ecs.With[components.Velocity](ecs.NewFilter()))
-	posRendFilter = ecs.With[components.Renderable](ecs.With[components.Position](ecs.NewFilter()))
+	velPosFilter  = ecs.NewFilter(components.PositionID, components.VelocityID)
+	posRendFilter = ecs.NewFilter(components.PositionID, components.RenderableID)
 )

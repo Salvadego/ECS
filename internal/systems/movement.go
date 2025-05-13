@@ -6,13 +6,13 @@ import (
 )
 
 type MovementSystem struct {
-	World                     *ecs.World
+	world                     *ecs.World
 	screenWidth, screenHeight int
 }
 
 func NewMovementSystem(world *ecs.World, width, height int) *MovementSystem {
 	return &MovementSystem{
-		World:        world,
+		world:        world,
 		screenWidth:  width,
 		screenHeight: height,
 	}
@@ -23,9 +23,9 @@ func (ms *MovementSystem) SetSize(width, height int) {
 }
 
 func (ms *MovementSystem) Update(dt float64) {
-	for _, t := range ecs.Query2[*components.Velocity, *components.Position](velPosFilter, ms.World) {
-		vel := t.C1
-		pos := t.C2
+	for _, t := range velPosFilter.Query(ms.world) {
+		pos := t[0].(*components.Position)
+		vel := t[1].(*components.Velocity)
 
 		pos.X += vel.X * dt
 		pos.Y += vel.Y * dt
